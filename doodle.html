@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Title</title>
+    <script type="text/javascript">
+
+        var Model = function(){
+
+            this.init = function(load_text) {
+                this.all_paths = [];
+                this.all_curves = [];
+                this.drawn_paths = [];
+                this.drawn_curves = [];
+                this.last_inserted = [];
+                if (load_text){
+                    this.pathsFromText(load_text);
+                }
+                return this;
+            }
+
+            this.pathsFromText = function(text){
+                var points = text.split(",");
+                this.start_path();
+                var is_drawn = false;
+                for (var i=0;i<points.length-1; i++){
+                    var point = points[i];
+                    if (point.charAt(0) == 'e') {
+                        this.end_path(is_drawn);
+                        point = point.slice(1);
+                        is_drawn = false;
+                        this.start_path();
+                    } else if (point.charAt(0) == 'E'){
+                        this.end_path(is_drawn);
+                        point = point.slice(1);
+                        this.start_path();
+                        is_drawn = true;
+                    }
+                    var pt_and_ctrl = point.split(":");
+                    var pt = pt_and_ctrl[0].split('-');
+                    var ctrl = pt_and_ctrl[1].split('-');
+                    this.add_point_to_current_path(pt, ctrl);
+                }
+                this.end_path(is_drawn);
+            }
+
+            this.paths_to_text = function(){
+                var text = "";
+                for (var i=0; i<this.all_paths.length; i++){
+                    var path = this.all_paths[i];
+                    text += "e" + path_to_text(path);
+                }
+                for (i=0; i<this.drawn_paths.length; i++){
+                    path = this.drawn_paths[i];
+                    text += "E" + path_to_text(path);
+                }
+                return text;
+            }
+
+            var path_to_text = function(path){
+                var text = ""
+                for (var i=0; i<path.curves.length; i++){
+                    var curve = path.curves[i];
+                    text += Math.ceil(curve.p[0][0]) + "-" + Math.ceil(curve.p[0][1]) + ":" +
+                                    Math.ceil(curve.c[0][0]) + "-" + Math.ceil(curve.c[0][1]) + ",";
+                }
+                if (curve) {
+                    text += Math.ceil(curve.p[1][0]) + "-" + Math.ceil(curve.p[1][1]) + ":" +
+                            Math.ceil(curve.c[1][0]) + "-" + Math.ceil(curve.c[1][1]) + ",";
+                }
+                return text
+            }
+
+
+            this.clear_all = function(){
+                this.all_paths = [];
+                this.all_curves = [];
+                this.drawn_paths = [];
+                this.drawn_curves = [];
+            }
+
+            this.remove_current_path = function(){
+                this.current_path = false;
+            }
+
+            this.start_path = function(){
+                this.current_path = new this.BezierPath([],[]);
+                this.all_paths.push(this.current_path);
+            }
+
+            this.change_current_point = function(point, control_point){
+                this.current_path.remove_point();
+                this.all_curves.splice(this.last_inserted, 1);
+                this.add_point_to_current_path(point, control_point);
+            }
+
+            this.add_point_to_current_path = function(point, control_point){
+                this.current_path.add_point(point, control_point);
+
+            }
+
+            this.end_path = function(is_drawn){
+                container = is_drawn?this.drawn_paths:this.all_paths
+
+                if (!this.current_path){
+                    return
+                }
+                container.push(this.current_path);
+                for (var i=0; i<this.current_path.curves.length; i++)
+                {
+                    var new_curve = this.current_path.curves[i];
+                    var index = Math.floor(Math.random() * this.all_curves.length);
+
+                    (is_drawn?this.drawn_curves:this.all_curves).splice(index, 0, new_curve);
+                    this.last_inserted = index;
+                }
+            }
+
+            var BezierCurve = function(points, control_points){
+                this.p = points;
+                this.c = control_points;
+            }
+
+            this.BezierPath = function(points, control_points){
+
+                this.points = points;
+                this.control_points = control_points;
+                this.curves = [];
+
+                var reflect_point = function(point_a, reflection_point){
+                    return [reflection_point[0] * 2 - point_a[0],
+                        reflection_point[1] * 2 - point_a[1]]
+                }
+
+                var make_new_curve = function(point1, point2, ctrl1, ctrl2){
+                    reflected = reflect_point(ctrl2, point2);
+                    return new BezierCurve([point1, point2],
+                            [ctrl1, reflected]);
+                }
+
+                this.make_next_curve = function(new_point, new_ctrl){
+                    last_point = this.points[this.points.length-1];
+                    last_control = this.control_points[this.control_points.length-1];
+                    new_bezier = make_new_curve(last_point, new_point, last_control, new_ctrl);
+                    return new_bezier;
+                }
+
+
+                this.add_point = function(point, control_point){
+                    if (this.points.length > 0) {
+                        var newCurve = this.make_next_curve(point, control_point);
+                        this.curves.push(newCurve);
+                    }
+                    this.points.push(point);
+                    this.control_points.push(control_point);
+                    return newCurve;
+                }
+
+                this.remove_point = function(){
+                    if (this.points.length > 1) {
+                        this.curves.pop();
+                    }
+                    this.points.pop();
+                    this.control_points.pop();
+                }
+
+
+
+            }
+
+        }
+
+
+        var Renderer = function (cvs) {
+            this.init = function() {
+                this.cvs = cvs;
+                this.ctx = cvs.getContext("2d");
+                return this;
+            };
+
+            this.clear_canvas = function (){
+                this.ctx.clearRect(0, 0, this.get_width(), this.get_height())
+            }
+
+            var randCol = function(){
+                min = 17;
+                add = 150;
+                r = Math.ceil(Math.random() * add + min);
+                g = Math.ceil(Math.random() * add + min);
+                b = Math.ceil(Math.random() * add + min);
+                color = ('#' + r.toString(16) + g.toString(16) + b.toString(16)).toUpperCase()
+                return color;
+            }
+
+            this.draw = function(model, show_drawn){
+                bg_curve_color='white';
+                drawn_curve_color=show_drawn?'red':'white';
+                current_curve_color='blue';
+
+                for (var i=0; i<model.all_curves.length; i++){
+                    bg_color=show_drawn?'black':randCol();
+                    this.draw_bezier_curve(model.all_curves[i], bg_color, 5);
+                    this.draw_bezier_curve(model.all_curves[i], bg_curve_color, 1);
+
+                }
+                for (i=0; i<model.drawn_curves.length; i++){
+                    bg_color=show_drawn?'black':randCol();
+                    this.draw_bezier_curve(model.drawn_curves[i], bg_color, 5);
+                    this.draw_bezier_curve(model.drawn_curves[i], drawn_curve_color, show_drawn?2:1);
+                }
+                if (model.current_path){
+                    bg_color=show_drawn?'black':randCol();
+                    this.draw_bezier_path(model.current_path, [bg_color, current_curve_color], [5,1]);
+                }
+            }
+
+            this.draw_bezier_paths = function (paths){
+                for (i=0; i<paths.length; i++){
+                    this.draw_bezier_curve(paths[i], 'white', 5);
+                    this.draw_bezier_curve(paths[i], 'black', 1);
+                }
+            }
+
+            this.draw_bezier_path = function(path, colors, width){
+                for (i=0; i<path.curves.length; i++) {
+                    for (j=0; j<colors.length; j++) {
+                        this.draw_bezier_curve(path.curves[i], colors[j], width[j]);
+                    }
+                }
+            }
+
+            this.draw_bezier_curve = function(curve, color, width){
+                this.ctx.beginPath();
+                this.ctx.moveTo(curve.p[0][0], curve.p[0][1]);
+                this.ctx.bezierCurveTo(
+                        curve.c[0][0], curve.c[0][1],
+                        curve.c[1][0], curve.c[1][1],
+                        curve.p[1][0], curve.p[1][1]
+                );
+                this.ctx.strokeStyle = color;
+                this.ctx.lineWidth = width;
+                this.ctx.stroke();
+            }
+
+
+            this.get_width = function (){
+                return this.cvs.width;
+            }
+
+            this.get_height = function (){
+                return this.cvs.height;
+            }
+        }
+
+        var controller = new function(){
+            var that;
+
+            this.init = function() {
+                var query = window.location.search.slice(1)
+
+                this.canvas = document.querySelector("canvas");
+                this.renderer  = new Renderer(this.canvas);
+                this.renderer.init();
+                this.width = this.renderer.get_width();
+                this.height = this.renderer.get_height();
+                this.model = new Model(query).init(query);
+                this.renderer.draw(this.model);
+                this.running = false;
+                this.is_down = false;
+                this.drawn_points = [];
+                this.ignore_one = false;
+                this.shown = false;
+                that = this;
+
+                window.addEventListener("mousedown", that.mouse_down, false);
+                window.addEventListener("mouseup", that.mouse_up, false);
+                window.addEventListener("mousemove", that.mouse_move, false);
+                return this;
+
+            };
+
+            function copyToClipboard(text) {
+                window.prompt("Copy to clipboard: Ctrl+C, Enter", text);
+            }
+
+            this.save = function(){
+                copyToClipboard(window.location.href.split("?")[0] + "?" + this.model.paths_to_text())
+            }
+
+            this.add_path = function(e) {
+                var pathLength = document.getElementById("curveLength").value;
+                var pathSegments = document.getElementById("pathSegments").value;
+                var curviness = document.getElementById("curviness").value;
+
+                this.model.start_path();
+
+                var old_point = [Math.random() * this.width, Math.random() * this.height];
+                for (var i = 0; i < pathSegments; i++) {
+                    var new_point = randShift(old_point , pathLength);
+                    var new_control = randShift(old_point, curviness);
+                    this.model.add_point_to_current_path(new_point, new_control);
+                    old_point = new_point;
+                }
+                this.model.end_path(false);
+                this.renderer.clear_canvas();
+                this.renderer.draw(this.model);
+            };
+
+            this.toggle_running = function(){
+                var button = document.getElementById("toggleButton");
+                this.running = !this.running;
+                if (this.running){
+                    button.innerHTML = "stop";
+                    this.generate_paths();
+                } else {
+                    button.innerHTML = "start";
+                }
+            }
+
+            this.clear_paths = function(){
+                this.model.clear_all();
+                this.renderer.clear_canvas();
+            };
+
+            this.generate_paths = function(){
+                if (that.running){
+                    that.add_path();
+                    setTimeout(that.generate_paths, 100);
+                }
+            }
+
+            var getMousePos = function(canvas, evt) {
+                var rect = canvas.getBoundingClientRect();
+                return {
+                    x: evt.clientX - rect.left,
+                    y: evt.clientY - rect.top
+                };
+            }
+
+            var mouse_in_canvas = function(canvas, evt){
+                p = getMousePos(canvas, evt);
+                return (p.x > 0 && p.x < canvas.width && p.y > 0 && p.y < canvas.height)
+            }
+
+            var randShift = function(point, dist){
+                return [Math.random() * dist * 2 - dist + point[0], Math.random() * dist * 2 - dist + point[1]]
+            }
+
+
+            this.mouse_down = function(e){
+                if (mouse_in_canvas(that.canvas, e)) {
+                    that.is_down = true;
+                    that.ignore_one = false;
+                    that.drawn_points = [];
+                    that.drawn_points[0] = getMousePos(that.canvas, e);
+                }
+
+            }
+            this.mouse_up = function(e){
+                if (that.is_down) {
+                    that.is_down = false;
+                    that.model.end_path(true);
+                    that.renderer.clear_canvas();
+                    that.renderer.draw(that.model);
+                }
+            }
+
+            this.mouse_move = function(e){
+                if (that.is_down) {
+                    var pos = getMousePos(that.canvas, e);
+
+                    if (that.drawn_points.length == 1 || that.has_moved_a_lot(pos, that.ignore_one?1:0)){
+                        that.drawn_points.push(pos);
+                        that.ignore_one = false;
+                    } else {
+                        that.drawn_points[that.drawn_points.length-1] = pos;
+                        that.ignore_one = true;
+                    }
+
+                    that.model.start_path();
+                    for (var i=0; i<that.drawn_points.length; i++) {
+                        var this_pos = that.drawn_points[i];
+                        moved_dist = i>0?dist(this_pos, that.drawn_points[i-i])/4:5;
+                        that.model.add_point_to_current_path([this_pos.x, this_pos.y],
+                                                              randShift([this_pos.x, this_pos.y], moved_dist));
+                    }
+                    that.renderer.clear_canvas();
+                    that.renderer.draw(that.model);
+                }
+            }
+
+            this.has_moved_a_lot = function (new_pos, n_ignore){
+                moved_dist = dist(new_pos, that.drawn_points[that.drawn_points.length-1-(n_ignore || 0)]);
+                if (this.drawn_points.length <= 2){
+                    return moved_dist > 30;
+                } else
+                {
+                    return moved_dist > 10 && this.has_angle_changed(new_pos, n_ignore || 0);
+                }
+            }
+
+            this.has_angle_changed = function(new_pos, n_ignore){
+                var x= Math.abs(get_angle(that.drawn_points[that.drawn_points.length-1 - n_ignore],
+                                          that.drawn_points[that.drawn_points.length-2 - n_ignore],
+                                          new_pos));
+                return x < 2.8;
+            }
+
+            var sq = function(x){
+                return Math.pow(x,2);
+            }
+
+            var get_angle = function(p1, p2, p3){
+                var d12 = dist(p1, p2);
+                var d13 = dist(p1, p3);
+                var d23 = dist(p2, p3);
+                return Math.acos((sq(d12)+sq(d13)-sq(d23))/(2*d12*d13))
+            }
+
+            var dist = function(p1, p2){
+                return Math.sqrt(sq(p1.x - p2.x) + sq(p1.y - p2.y));
+            }
+
+            this.show = function(){
+                this.model.remove_current_path();
+                this.shown = !this.shown;
+                if (this.shown) {
+                    this.renderer.draw(this.model, true);
+                } else {
+                    this.renderer.draw(this.model, false);
+                }
+            }
+        }();
+
+
+
+
+
+
+    </script>
+</head>
+<body onload="controller.init()">
+<center>
+<canvas id="imgCanvas" style="width: 500px; height:500px; border-style:groove; border-color:gray" width="500px" height="500px"></canvas>
+<br/>
+<button id="clearButton" onclick="controller.clear_paths()"> Clear </button>
+<button id="toggleButton" onclick="controller.toggle_running()"> Start </button>
+<button id="addPath" onclick="controller.add_path()"> Add path </button>
+<button id="show" onclick="controller.show()"> Show </button>
+<!--<button id="save" onClick="controller.save()"> Save </button> Doesn't quite work... -->
+<br/>
+<label> Curve size:</label>
+<input title="curveLength" type="text" id="curveLength" value="60">
+<br/> <label> Curviness: </label>
+<input title="curveAmount" type="text" id="curviness" value="60">
+<br/> <label> Curve length: </label>
+<input title="segments" type="text" id="pathSegments" value="30">
+</center>
+</body>
+
+</html>
