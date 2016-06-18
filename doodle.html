@@ -175,6 +175,8 @@
             this.init = function() {
                 this.cvs = cvs;
                 this.ctx = cvs.getContext("2d");
+                this.ctx.font = "30px Arial";
+                this.ctx.fillText("Click to draw!", 150, 200);
                 return this;
             };
 
@@ -263,7 +265,7 @@
                 this.renderer.init();
                 this.width = this.renderer.get_width();
                 this.height = this.renderer.get_height();
-                this.model = new Model(query).init(query);
+                this.model = new Model().init()
                 this.renderer.draw(this.model);
                 this.running = false;
                 this.is_down = false;
